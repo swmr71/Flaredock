@@ -46,3 +46,41 @@ services:
       - CF_TUNNEL_ID=your_cloudflare_tunnel_id
       - CF_ACCESS_GROUP_ID=your_existing_access_group_id
       - CF_DOMAIN=clusters-prj.com
+
+```
+### 2. 環境変数マニュアル
+| 環境変数 | 必須 | 説明 |
+|---|---|---|
+| CF_API_TOKEN | ✅ | CloudflareのAPIトークン |
+| CF_ACCOUNT_ID | ✅ | CloudflareのアカウントID |
+| CF_TUNNEL_ID | ✅ | 使用するCloudflare TunnelのID |
+| CF_ACCESS_GROUP_ID | ✅ | 使い回す既存のAccess GroupのID |
+| CF_DOMAIN | ✅ | ベースとなるドメイン（例: clusters-prj.com） |
+## 🔒 保護したいコンテナの設定方法
+Flaredockの監視対象にするには、公開したいアプリのコンテナに**3つのラベル**を付与して起動するだけです。
+#### 設定例 (docker-compose.yml)
+```yaml
+version: '3.8'
+
+services:
+  my-app:
+    image: nginx:latest
+    container_name: internal-dashboard
+    ports:
+      - "8080:80"
+    labels:
+      # 1. Flaredockの自動化を有効化
+      - "cf-tunnel.enable=true"
+      
+      # 2. 生成したいサブドメイン名 (省略時は「コンテナ名-docker」になります)
+      - "cf-tunnel.subdomain=dashboard-docker"
+      
+      # 3. Cloudflare Tunnelコンテナから、このコンテナへの転送先URL
+      - "cf-tunnel.dest=[http://192.168.1.100:8080](http://192.168.1.100:8080)"
+
+```
+### 💡 cf-tunnel.dest のヒント
+Cloudflare Tunnel (cloudflared) と同じDockerネットワークに所属させている場合は、ホストIPではなく、コンテナ名を使った内部通信URL（例: http://internal-dashboard:80）を指定するとポートを汚さず最もセキュアになります。
+## ⚠️ 注意事項
+ * **既存設定の上書き**: Cloudflareの仕様上、Tunnel Ingressの更新は「現在の設定を取得して要素を追加し、丸ごと上書き（PUT）」を行います。手動で設定を変更した直後は、コンテナの再起動による競合にご注意ください。
+ * **DNSの自動同期**: 本ツールがTunnel設定を更新すると、Cloudflare側で対象サブドメインのCNAMEレコードが自動生成されます。
