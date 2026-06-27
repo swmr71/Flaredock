@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  flaredock:
+    build: .
+    container_name: flaredock
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CF_API_TOKEN=your_cloudflare_api_token
+      - CF_ACCOUNT_ID=your_cloudflare_account_id
+      - CF_TUNNEL_ID=your_cloudflare_tunnel_id
+      - CF_ACCESS_GROUP_ID=your_existing_access_group_id
+      - CF_DOMAIN=clusters-prj.com
