@@ -74,6 +74,7 @@ services:
 | `CF_TUNNEL_ID` | ✅ | 使用する Cloudflare Tunnel の ID |
 | `CF_ACCESS_GROUP_ID` | ✅ | 既存の Access Group ID（ポリシーの適用先） |
 | `CF_DOMAIN` | ⭕ | ベースドメイン（デフォルト: `clusters-prj.com`） |
+| `DOCKER_HOST_IP` | ⭕ | Docker ホストマシンの IP アドレス（例: `10.2.0.1`）。Tunnel からコンテナへのアクセス時に使用 |
 
 ---
 

@@ -67,13 +67,18 @@ def create_access_policy(app_id):
         "include": [{"group": {"id": ACCESS_GROUP_ID}}]
     }
     res = requests.post(url, headers=HEADERS, json=payload, timeout=10)
-    print(f"[DEBUG] Policy creation response: {res.status_code}")
+    
+    if res.status_code not in [200, 201]:
+        print(f"[DEBUG] Policy creation failed ({res.status_code}): {res.text}")
+    else:
+        print(f"[DEBUG] Policy creation response: {res.status_code}")
+    
     return res.status_code in [200, 201]
 
 def get_port_forward_url(container):
     """
     コンテナのポート公開情報から、転送先URLを生成
-    コンテナがローカルIP + ホストポート でアクセス可能なことを想定
+    Docker ホストマシンの IP + ホストポートを使用
     """
     ports = container.ports
     
@@ -81,27 +86,24 @@ def get_port_forward_url(container):
         print(f"[{container.name}] No exposed ports found")
         return None
     
-    # 最初の公開ポートを使用（host_ip:host_port -> container_port形式）
+    # Docker ホストマシンの IP を取得（環境変数で指定可能）
+    docker_host_ip = os.getenv("DOCKER_HOST_IP", "localhost")
+    
+    # 最初の公開ポートを使用
     for container_port, bindings in ports.items():
         if bindings:
             binding = bindings[0]
-            host_ip = binding.get("HostIp", "localhost")
             host_port = binding.get("HostPort")
             
-            # ローカルホストの場合、127.0.0.1 をスキップして次を探す
-            if host_ip == "127.0.0.1" or host_ip == "":
+            if not host_port:
                 continue
             
-            if host_port:
-                # コンテナのポート番号部分（プロトコル除去）
-                port_num = container_port.split("/")[0]
-                url = f"http://{host_ip}:{host_port}"
-                print(f"[{container.name}] Port binding: {host_ip}:{host_port} -> {port_num}")
-                return url
+            # Docker ホストの IP + ホストポート で転送
+            url = f"http://{docker_host_ip}:{host_port}"
+            print(f"[{container.name}] Using host binding: {url}")
+            return url
     
-    # フォールバック：コンテナ名でのアクセス（同じネットワーク内）
-    print(f"[{container.name}] Using container name for internal access")
-    return f"http://{container.name}:80"
+    return None
 
 def process_container(container):
     """
@@ -143,8 +145,11 @@ def process_container(container):
 
     if update_tunnel_config(config, hostname, dest_url):
         app_id = create_access_app(hostname, f"Automated - {c_name}")
-        if app_id and create_access_policy(app_id):
-            print(f"[✓] Successfully protected {hostname} with existing Access Group!")
+        if app_id:
+            if create_access_policy(app_id):
+                print(f"[✓] Successfully protected {hostname} with existing Access Group!")
+            else:
+                print(f"[⚠] {hostname} added to Tunnel, but policy creation failed. Check ACCESS_GROUP_ID.")
 
 def main():
     print("Starting Cloudflare Zero Trust Docker Monitor...")
