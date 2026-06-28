@@ -7,10 +7,10 @@ import docker
 API_TOKEN = os.getenv("CF_API_TOKEN")
 ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID")
 TUNNEL_ID = os.getenv("CF_TUNNEL_ID")
-ACCESS_GROUP_ID = os.getenv("CF_ACCESS_GROUP_ID")
+ACCESS_POLICY_ID = os.getenv("CF_ACCESS_POLICY_ID")
 DOMAIN = os.getenv("CF_DOMAIN", "clusters-prj.com")
 
-if not all([API_TOKEN, ACCOUNT_ID, TUNNEL_ID, ACCESS_GROUP_ID]):
+if not all([API_TOKEN, ACCOUNT_ID, TUNNEL_ID, ACCESS_POLICY_ID]):
     print("Error: Missing required environment variables.")
     sys.exit(1)
 
@@ -59,21 +59,21 @@ def create_access_app(hostname, app_name):
     return None
 
 def create_access_policy(app_id):
-    print(f"[DEBUG] Creating policy for app {app_id}...")
-    url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/access/apps/{app_id}/policies"
-    payload = {
-        "name": "Inherited Group Policy",
-        "decision": "allow",
-        "include": [{"group": {"id": ACCESS_GROUP_ID}}]
-    }
-    res = requests.post(url, headers=HEADERS, json=payload, timeout=10)
+    print(f"[DEBUG] Applying policy {ACCESS_POLICY_ID} to app {app_id}...")
+    url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/access/apps/{app_id}/policies/{ACCESS_POLICY_ID}"
+    
+    # ポリシー参照用のペイロード（既存ポリシーを紐付け）
+    payload = {}
+    
+    # PATCH リクエストでポリシーを紐付け
+    res = requests.patch(url, headers=HEADERS, json=payload, timeout=10)
     
     if res.status_code not in [200, 201]:
-        print(f"[DEBUG] Policy creation failed ({res.status_code}): {res.text}")
+        print(f"[DEBUG] Policy attachment failed ({res.status_code}): {res.text}")
+        return False
     else:
-        print(f"[DEBUG] Policy creation response: {res.status_code}")
-    
-    return res.status_code in [200, 201]
+        print(f"[DEBUG] Policy attachment response: {res.status_code}")
+        return True
 
 def get_port_forward_url(container):
     """
@@ -147,9 +147,9 @@ def process_container(container):
         app_id = create_access_app(hostname, f"Automated - {c_name}")
         if app_id:
             if create_access_policy(app_id):
-                print(f"[✓] Successfully protected {hostname} with existing Access Group!")
+                print(f"[✓] Successfully protected {hostname} with policy!")
             else:
-                print(f"[⚠] {hostname} added to Tunnel, but policy creation failed. Check ACCESS_GROUP_ID.")
+                print(f"[⚠] {hostname} added to Tunnel, but policy attachment failed. Check CF_ACCESS_POLICY_ID.")
 
 def main():
     print("Starting Cloudflare Zero Trust Docker Monitor...")

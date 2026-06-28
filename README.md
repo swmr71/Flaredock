@@ -72,7 +72,7 @@ services:
 | `CF_API_TOKEN` | ✅ | Cloudflare API トークン（Account.Cloudflare Tunnel (Edit) と Account.Access (Edit) 権限必須） |
 | `CF_ACCOUNT_ID` | ✅ | Cloudflare アカウントID |
 | `CF_TUNNEL_ID` | ✅ | 使用する Cloudflare Tunnel の ID |
-| `CF_ACCESS_GROUP_ID` | ✅ | 既存の Access Group ID（ポリシーの適用先） |
+| `CF_ACCESS_POLICY_ID` | ✅ | 既存の Cloudflare Access ポリシーの ID（新しいアプリに自動で紐付けられます） |
 | `CF_DOMAIN` | ⭕ | ベースドメイン（デフォルト: `clusters-prj.com`） |
 | `DOCKER_HOST_IP` | ⭕ | Docker ホストマシンの IP アドレス（例: `10.2.0.1`）。Tunnel からコンテナへのアクセス時に使用 |
 
