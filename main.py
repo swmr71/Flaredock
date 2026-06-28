@@ -101,12 +101,14 @@ def main():
     # コンテナの起動イベントをストリーム監視
     for event in client.events(decode=True, filters={"event": "start", "type": "container"}):
         try:
-            # 'id' が存在するか確認してから参照
-            if "id" not in event:
-                print(f"Warning: Event missing 'id' field: {event}")
+            # Docker イベントペイロードの構造に合わせてコンテナID取得
+            container_id = event.get("Actor", {}).get("ID")
+            
+            if not container_id:
+                print(f"Warning: Event missing container ID: {event}")
                 continue
             
-            container = client.containers.get(event["id"])
+            container = client.containers.get(container_id)
             process_container(container)
         except Exception as e:
             print(f"Error processing event: {e}")
