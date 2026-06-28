@@ -94,13 +94,18 @@ def main():
     print("Starting Cloudflare Zero Trust Docker Monitor...")
     client = docker.from_env()
     
-    # 既存の起動中コンテナもチェックしたい場合はここを有効に
+    # 既存の起動中コンテナもチェック
     for container in client.containers.list():
         process_container(container)
 
     # コンテナの起動イベントをストリーム監視
-    for event in client.events(decode=True, filters={"event": "start"}):
+    for event in client.events(decode=True, filters={"event": "start", "type": "container"}):
         try:
+            # 'id' が存在するか確認してから参照
+            if "id" not in event:
+                print(f"Warning: Event missing 'id' field: {event}")
+                continue
+            
             container = client.containers.get(event["id"])
             process_container(container)
         except Exception as e:
