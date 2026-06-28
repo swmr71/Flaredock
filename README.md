@@ -41,8 +41,10 @@ Flaredock が Docker イベントをリッスンし、**ポート公開された
 コンテナがポート公開してると、以下の自動設定が走ります：
 
 1. **サブドメイン**: `{コンテナ名}-docker.{DOMAIN}` （例: `nginx-docker.clusters-prj.com`）
-2. **転送先**: ホストの IP とポート、またはコンテナ内部通信アドレス
-3. **認証**: 既存の Access Group のポリシーを自動適用
+2. **転送先**: ホストの IP + ホストポート（複数ポート公開時は HTTPS系 `9443` → `8443` → `443` を優先）
+3. **Tunnel Ingress ルール**: 自動で Tunnel に登録
+
+ポリシー（Access 認証）は Cloudflare ダッシュボードから手動で設定してください。
 
 ### ラベルでのカスタマイズ
 
@@ -69,10 +71,9 @@ services:
 
 | 環境変数 | 必須 | 説明 |
 |---|---|---|
-| `CF_API_TOKEN` | ✅ | Cloudflare API トークン（Account.Cloudflare Tunnel (Edit) と Account.Access (Edit) 権限必須） |
+| `CF_API_TOKEN` | ✅ | Cloudflare API トークン（Account.Cloudflare Tunnel (Edit) 権限必須） |
 | `CF_ACCOUNT_ID` | ✅ | Cloudflare アカウントID |
 | `CF_TUNNEL_ID` | ✅ | 使用する Cloudflare Tunnel の ID |
-| `CF_ACCESS_POLICY_ID` | ✅ | 既存の Cloudflare Access ポリシーの ID（新しいアプリに自動で紐付けられます） |
 | `CF_DOMAIN` | ⭕ | ベースドメイン（デフォルト: `clusters-prj.com`） |
 | `DOCKER_HOST_IP` | ⭕ | Docker ホストマシンの IP アドレス（例: `10.2.0.1`）。Tunnel からコンテナへのアクセス時に使用 |
 

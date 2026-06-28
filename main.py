@@ -7,10 +7,9 @@ import docker
 API_TOKEN = os.getenv("CF_API_TOKEN")
 ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID")
 TUNNEL_ID = os.getenv("CF_TUNNEL_ID")
-ACCESS_POLICY_ID = os.getenv("CF_ACCESS_POLICY_ID")
 DOMAIN = os.getenv("CF_DOMAIN", "clusters-prj.com")
 
-if not all([API_TOKEN, ACCOUNT_ID, TUNNEL_ID, ACCESS_POLICY_ID]):
+if not all([API_TOKEN, ACCOUNT_ID, TUNNEL_ID]):
     print("Error: Missing required environment variables.")
     sys.exit(1)
 
@@ -47,6 +46,9 @@ def update_tunnel_config(current_config, hostname, dest_url):
     return res.status_code == 200
 
 def create_access_app(hostname, app_name):
+    """
+    Access App を作成（ポリシーは手動で設定）
+    """
     print(f"[DEBUG] Creating Access App for {hostname}...")
     url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/access/apps"
     payload = {"name": app_name, "domain": hostname, "type": "self_hosted", "session_duration": "24h"}
@@ -55,30 +57,25 @@ def create_access_app(hostname, app_name):
         app_id = res.json().get("result", {}).get("id")
         print(f"[DEBUG] Access App created: {app_id}")
         return app_id
+    
+    # 既に存在する場合はスキップ
+    if res.status_code == 400 and "application_already_exists" in res.text:
+        print(f"[DEBUG] Access App already exists for {hostname}")
+        return None
+    
     print(f"Failed to create Access App: {res.text}")
     return None
 
 def create_access_policy(app_id):
-    print(f"[DEBUG] Applying policy {ACCESS_POLICY_ID} to app {app_id}...")
-    url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/access/apps/{app_id}/policies/{ACCESS_POLICY_ID}"
-    
-    # ポリシー参照用のペイロード（既存ポリシーを紐付け）
-    payload = {}
-    
-    # PATCH リクエストでポリシーを紐付け
-    res = requests.patch(url, headers=HEADERS, json=payload, timeout=10)
-    
-    if res.status_code not in [200, 201]:
-        print(f"[DEBUG] Policy attachment failed ({res.status_code}): {res.text}")
-        return False
-    else:
-        print(f"[DEBUG] Policy attachment response: {res.status_code}")
-        return True
+    print(f"[DEBUG] Policy management is manual. Configure in Cloudflare dashboard.")
+    return True
 
 def get_port_forward_url(container):
     """
     コンテナのポート公開情報から、転送先URLを生成
     Docker ホストマシンの IP + ホストポートを使用
+    
+    複数ポート公開時は、443系（HTTPS）を優先、次に8000系、その他の順
     """
     ports = container.ports
     
@@ -89,7 +86,10 @@ def get_port_forward_url(container):
     # Docker ホストマシンの IP を取得（環境変数で指定可能）
     docker_host_ip = os.getenv("DOCKER_HOST_IP", "localhost")
     
-    # 最初の公開ポートを使用
+    # ポート優先度リスト（443系 > 8000系 > その他）
+    priority_ports = []
+    other_ports = []
+    
     for container_port, bindings in ports.items():
         if bindings:
             binding = bindings[0]
@@ -98,12 +98,28 @@ def get_port_forward_url(container):
             if not host_port:
                 continue
             
-            # Docker ホストの IP + ホストポート で転送
-            url = f"http://{docker_host_ip}:{host_port}"
-            print(f"[{container.name}] Using host binding: {url}")
-            return url
+            port_num = int(host_port)
+            
+            # 443系ポート（9443, 8443, 443など）を優先
+            if port_num in [443, 8443, 9443]:
+                priority_ports.append((port_num, host_port))
+            # 8000系ポートを次優先
+            elif 8000 <= port_num < 9000:
+                priority_ports.append((port_num, host_port))
+            else:
+                other_ports.append((port_num, host_port))
     
-    return None
+    # ソート：443系を優先（降順で9443, 8443, 443）
+    priority_ports.sort(reverse=True)
+    selected_port = priority_ports[0][1] if priority_ports else (other_ports[0][1] if other_ports else None)
+    
+    if not selected_port:
+        print(f"[{container.name}] No suitable port found")
+        return None
+    
+    url = f"http://{docker_host_ip}:{selected_port}"
+    print(f"[{container.name}] Using host binding: {url}")
+    return url
 
 def process_container(container):
     """
@@ -144,12 +160,8 @@ def process_container(container):
         return
 
     if update_tunnel_config(config, hostname, dest_url):
-        app_id = create_access_app(hostname, f"Automated - {c_name}")
-        if app_id:
-            if create_access_policy(app_id):
-                print(f"[✓] Successfully protected {hostname} with policy!")
-            else:
-                print(f"[⚠] {hostname} added to Tunnel, but policy attachment failed. Check CF_ACCESS_POLICY_ID.")
+        create_access_app(hostname, f"Automated - {c_name}")
+        print(f"[✓] Successfully added {hostname} to Tunnel!")
 
 def main():
     print("Starting Cloudflare Zero Trust Docker Monitor...")
