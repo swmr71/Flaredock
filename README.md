@@ -1,86 +1,115 @@
 # Flaredock
-Flaredock は、Dockerコンテナの起動をリアルタイムに監視し、Cloudflare Tunnel（Argo Tunnel）のルーティング設定と、Cloudflare Zero Trust（Access）による認証保護を完全自動化する軽量デーモンコンテナです。
-# Flaredock 🚀
-
-Dockerコンテナの起動を検知し、Cloudflare Tunnelの設定とZero Trust認証の適用を完全自動化するデーモンツール。
-
-コンテナに特定のラベルを貼って起動するだけで、世界中どこからでも安全にアクセスできる「認証付きサブドメイン」が即座に生えてきます。
+Dockerコンテナの起動をリアルタイムに監視し、Cloudflare Tunnel（Argo Tunnel）のルーティング設定と、Cloudflare Zero Trust（Access）による認証保護を完全自動化する軽量デーモンコンテナです。
 
 ## 🌟 特徴
-- **完全自動のインバウンドルーティング**: `docker run` や `docker compose up` を検知して自動でTunnelのIngressルールを更新。
-- **Zero Trustによる即時保護**: 新規サブドメインに対して、既存のCloudflare Access Group（認証ポリシー）を自動で適用。
-- **コンテナ単体で動作**: ホストの `/var/run/docker.sock` を読み込むだけで動く軽量設計。
+- **自動ポート検出**: コンテナがポート公開してたら自動で Tunnel に登録
+- **ラベルによる上書き**: `cf-tunnel.subdomain` や `cf-tunnel.dest` で詳細制御が可能
+- **Zero Trust自動適用**: 既存の Access Group を自動で新規サブドメインに適用
+- **コンテナ単体で動作**: ホストの `/var/run/docker.sock` を読み込むだけで動く軽量設計
 
 ---
 
-## 🛠️ 事前準備
-1. **Cloudflare API トークン**
-   - 以下の権限を持ったトークンを生成してください。
-     - `Account.Cloudflare Tunnel (Edit)`
-     - `Account.Access (Edit)`
-2. **Cloudflare 既存の Access Group**
-   - 使い回したい既存の閲覧許可ルール（Access Group）の **Group ID (UUID)** をダッシュボードから控えておいてください。
+## 🛠️ セットアップ
 
----
+### 1. 環境変数の設定
 
-## 🚀 使い方
+`.env.example` から `.env` を作成して、Cloudflare API 情報を入力：
 
-### 1. Flaredock の起動
-
-まずは、Dockerホスト側で `Flaredock` 自体を常駐させます。
-
-#### `docker-compose.yml` (Flaredock用)
-```yaml
-version: '3.8'
-
-services:
-  flaredock:
-    image: your-registry/flaredock:latest  # またはビルド指定
-    container_name: flaredock
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      - CF_API_TOKEN=your_cloudflare_api_token
-      - CF_ACCOUNT_ID=your_cloudflare_account_id
-      - CF_TUNNEL_ID=your_cloudflare_tunnel_id
-      - CF_ACCESS_GROUP_ID=your_existing_access_group_id
-      - CF_DOMAIN=clusters-prj.com
-
+```bash
+cp .env.example .env
+# .env を編集して以下を入力：
+# - CF_API_TOKEN: Cloudflare API トークン
+# - CF_ACCOUNT_ID: アカウントID
+# - CF_TUNNEL_ID: Tunnel ID
+# - CF_ACCESS_GROUP_ID: 既存の Access Group ID
+# - CF_DOMAIN: ベースドメイン（例: clusters-prj.com）
 ```
-### 2. 環境変数マニュアル
-| 環境変数 | 必須 | 説明 |
-|---|---|---|
-| CF_API_TOKEN | ✅ | CloudflareのAPIトークン |
-| CF_ACCOUNT_ID | ✅ | CloudflareのアカウントID |
-| CF_TUNNEL_ID | ✅ | 使用するCloudflare TunnelのID |
-| CF_ACCESS_GROUP_ID | ✅ | 使い回す既存のAccess GroupのID |
-| CF_DOMAIN | ✅ | ベースとなるドメイン（例: clusters-prj.com） |
-## 🔒 保護したいコンテナの設定方法
-Flaredockの監視対象にするには、公開したいアプリのコンテナに**3つのラベル**を付与して起動するだけです。
-#### 設定例 (docker-compose.yml)
-```yaml
-version: '3.8'
 
+### 2. 起動
+
+```bash
+docker-compose up -d
+```
+
+Flaredock が Docker イベントをリッスンし、**ポート公開されたコンテナを自動でスキャン** します。
+
+---
+
+## 🚀 動作原理
+
+### 自動検出モード（デフォルト）
+コンテナがポート公開してると、以下の自動設定が走ります：
+
+1. **サブドメイン**: `{コンテナ名}-docker.{DOMAIN}` （例: `nginx-docker.clusters-prj.com`）
+2. **転送先**: ホストの IP とポート、またはコンテナ内部通信アドレス
+3. **認証**: 既存の Access Group のポリシーを自動適用
+
+### ラベルでのカスタマイズ
+
+```yaml
 services:
   my-app:
     image: nginx:latest
-    container_name: internal-dashboard
     ports:
       - "8080:80"
     labels:
-      # 1. Flaredockの自動化を有効化
-      - "cf-tunnel.enable=true"
+      # サブドメインをカスタマイズ
+      - "cf-tunnel.subdomain=custom-dashboard"
       
-      # 2. 生成したいサブドメイン名 (省略時は「コンテナ名-docker」になります)
-      - "cf-tunnel.subdomain=dashboard-docker"
+      # 転送先URLを明示的に指定
+      - "cf-tunnel.dest=http://192.168.1.100:8080"
       
-      # 3. Cloudflare Tunnelコンテナから、このコンテナへの転送先URL
-      - "cf-tunnel.dest=[http://192.168.1.100:8080](http://192.168.1.100:8080)"
-
+      # 明示的に無効化（cf-tunnel.enable=false を指定したら Flaredock は無視）
+      # - "cf-tunnel.enable=false"
 ```
-### 💡 cf-tunnel.dest のヒント
-Cloudflare Tunnel (cloudflared) と同じDockerネットワークに所属させている場合は、ホストIPではなく、コンテナ名を使った内部通信URL（例: http://internal-dashboard:80）を指定するとポートを汚さず最もセキュアになります。
+
+---
+
+## 📋 環境変数リスト
+
+| 環境変数 | 必須 | 説明 |
+|---|---|---|
+| `CF_API_TOKEN` | ✅ | Cloudflare API トークン（Account.Cloudflare Tunnel (Edit) と Account.Access (Edit) 権限必須） |
+| `CF_ACCOUNT_ID` | ✅ | Cloudflare アカウントID |
+| `CF_TUNNEL_ID` | ✅ | 使用する Cloudflare Tunnel の ID |
+| `CF_ACCESS_GROUP_ID` | ✅ | 既存の Access Group ID（ポリシーの適用先） |
+| `CF_DOMAIN` | ⭕ | ベースドメイン（デフォルト: `clusters-prj.com`） |
+
+---
+
 ## ⚠️ 注意事項
- * **既存設定の上書き**: Cloudflareの仕様上、Tunnel Ingressの更新は「現在の設定を取得して要素を追加し、丸ごと上書き（PUT）」を行います。手動で設定を変更した直後は、コンテナの再起動による競合にご注意ください。
- * **DNSの自動同期**: 本ツールがTunnel設定を更新すると、Cloudflare側で対象サブドメインのCNAMEレコードが自動生成されます。
+
+- **Tunnel 設定の上書き**: Cloudflare の仕様上、Tunnel Ingress は「現在の設定を取得 → ルール追加 → 丸ごと上書き」で更新します。手動での設定変更直後にコンテナ再起動すると競合の可能性があります。
+- **DNS 自動同期**: Tunnel 設定更新時に対応する CNAME レコードが Cloudflare 側で自動生成されます。
+- **Access Group の事前作成**: Access Group ID は事前にダッシュボードで作成・確認が必要です。
+
+---
+
+## 🔧 トラブルシューティング
+
+### ログを確認
+
+```bash
+docker logs -f flaredock
+```
+
+### API トークンのテスト
+
+```bash
+curl -X GET "https://api.cloudflare.com/client/v4/user" \
+  -H "Authorization: Bearer {YOUR_API_TOKEN}"
+```
+
+### docker.sock のパーミッション確認
+
+```bash
+ls -la /var/run/docker.sock
+```
+
+Flaredock コンテナが読み取り可能な状態である必要があります。
+
+---
+
+## 📝 ライセンス
+
+MIT
