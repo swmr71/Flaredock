@@ -3,9 +3,9 @@ Dockerコンテナの起動をリアルタイムに監視し、Cloudflare Tunnel
 
 ## 🌟 特徴
 - **自動ポート検出**: コンテナがポート公開してたら自動で Tunnel に登録
+- **DNS 自動作成**: CNAME レコードを自動で Cloudflare に登録
 - **ラベルによる上書き**: `cf-tunnel.subdomain` や `cf-tunnel.dest` で詳細制御が可能
-- **Zero Trust自動適用**: 既存の Access Group を自動で新規サブドメインに適用
-- **コンテナ単体で動作**: ホストの `/var/run/docker.sock` を読み込むだけで動く軽量設計
+- **軽量設計**: ホストの `/var/run/docker.sock` を読み込むだけで動作
 
 ---
 
@@ -43,6 +43,7 @@ Flaredock が Docker イベントをリッスンし、**ポート公開された
 1. **サブドメイン**: `{コンテナ名}-docker.{DOMAIN}` （例: `nginx-docker.clusters-prj.com`）
 2. **転送先**: ホストの IP + ホストポート（複数ポート公開時は HTTPS系 `9443` → `8443` → `443` を優先）
 3. **Tunnel Ingress ルール**: 自動で Tunnel に登録
+4. **DNS CNAME レコード**: 自動で Cloudflare DNS に登録（proxied = true）
 
 ポリシー（Access 認証）は Cloudflare ダッシュボードから手動で設定してください。
 

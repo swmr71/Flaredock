@@ -25,6 +25,60 @@ def get_current_tunnel_config():
     print(f"[DEBUG] Tunnel config response: {res.status_code}")
     return res.json().get("result", {}).get("config", {}) if res.status_code == 200 else None
 
+def get_zone_id():
+    """ドメインの Zone ID を取得"""
+    print(f"[DEBUG] Fetching Zone ID for {DOMAIN}...")
+    url = f"https://api.cloudflare.com/client/v4/zones?name={DOMAIN}"
+    res = requests.get(url, headers=HEADERS, timeout=10)
+    if res.status_code == 200:
+        zones = res.json().get("result", [])
+        if zones:
+            zone_id = zones[0].get("id")
+            print(f"[DEBUG] Zone ID: {zone_id}")
+            return zone_id
+    print(f"[DEBUG] Failed to fetch Zone ID")
+    return None
+
+def get_tunnel_cname():
+    """Tunnel の CNAME ターゲットを取得"""
+    print(f"[DEBUG] Fetching Tunnel CNAME...")
+    url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/cfd_tunnel/{TUNNEL_ID}"
+    res = requests.get(url, headers=HEADERS, timeout=10)
+    if res.status_code == 200:
+        tunnel = res.json().get("result", {})
+        cname = tunnel.get("cname")
+        print(f"[DEBUG] Tunnel CNAME: {cname}")
+        return cname
+    print(f"[DEBUG] Failed to fetch Tunnel CNAME")
+    return None
+
+def create_dns_record(zone_id, subdomain, cname_target):
+    """DNS CNAME レコードを作成"""
+    print(f"[DEBUG] Creating DNS record for {subdomain}.{DOMAIN} -> {cname_target}...")
+    url = f"https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records"
+    payload = {
+        "type": "CNAME",
+        "name": subdomain,
+        "content": cname_target,
+        "ttl": 1,  # Auto
+        "proxied": True
+    }
+    res = requests.post(url, headers=HEADERS, json=payload, timeout=10)
+    
+    if res.status_code in [200, 201]:
+        print(f"[DEBUG] DNS record created successfully")
+        return True
+    elif res.status_code == 400:
+        # レコードが既に存在する場合
+        if "already_exists" in res.text or "duplicate" in res.text.lower():
+            print(f"[DEBUG] DNS record already exists")
+            return True
+        print(f"[DEBUG] DNS record creation failed: {res.text}")
+        return False
+    else:
+        print(f"[DEBUG] DNS record creation failed ({res.status_code}): {res.text}")
+        return False
+
 def update_tunnel_config(current_config, hostname, dest_url):
     print(f"[DEBUG] Updating tunnel config for {hostname}...")
     url = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/cfd_tunnel/{TUNNEL_ID}/configurations"
@@ -43,6 +97,16 @@ def update_tunnel_config(current_config, hostname, dest_url):
         
     res = requests.put(url, headers=HEADERS, json={"config": {"ingress": ingress}}, timeout=10)
     print(f"[DEBUG] PUT response: {res.status_code}")
+    
+    if res.status_code == 200:
+        # Tunnel 設定成功後、DNS レコードも自動作成
+        zone_id = get_zone_id()
+        if zone_id:
+            cname_target = get_tunnel_cname()
+            if cname_target:
+                subdomain = hostname.replace(f".{DOMAIN}", "")
+                create_dns_record(zone_id, subdomain, cname_target)
+    
     return res.status_code == 200
 
 def create_access_app(hostname, app_name):
